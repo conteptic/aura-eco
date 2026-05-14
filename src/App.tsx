@@ -155,15 +155,13 @@ export default function App() {
 
     return () => tg.BackButton.offClick(handleBack);
   }, [tg, showHistory, showLogMenu]);
+  }, [tg, showHistory, showLogMenu, showLeaderboard, showDonation]);
 
   // Sync with Cloud (Debounced)
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || !userId) return;
 
     const syncData = async () => {
-      const userId = tg?.initDataUnsafe?.user?.id.toString() || 'local_user';
-      const userName = tg?.initDataUnsafe?.user?.first_name || 'Герой';
-
       await supabase.from('profiles').upsert({
         id: userId,
         username: userName,
@@ -176,14 +174,43 @@ export default function App() {
 
     const timer = setTimeout(syncData, 1000);
     return () => clearTimeout(timer);
-  }, [energy, level, history, isLoading, tg]);
+  }, [energy, level, history, isLoading, userId, userName]);
+
+  const resetData = async () => {
+    if (!window.confirm('Вы уверены, что хотите полностью сбросить свой прогресс? Это действие нельзя отменить.')) {
+      return;
+    }
+
+    if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('warning');
+
+    try {
+      if (userId) {
+        await supabase
+          .from('profiles')
+          .update({ 
+            energy: 0, 
+            level: 1, 
+            history: [] 
+          })
+          .eq('id', userId);
+      }
+      
+      setEnergy(0);
+      setLevel(1);
+      setHistory([]);
+      
+      if (tg?.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+      window.location.reload();
+    } catch (error) {
+      console.error('Error resetting data:', error);
+      alert('Ошибка при сбросе данных');
+    }
+  };
 
   // Fetch Leaderboard
   useEffect(() => {
     if (showLeaderboard) {
       const fetchLeaderboard = async () => {
-        const userId = tg?.initDataUnsafe?.user?.id.toString() || 'local_user';
-        
         const { data } = await supabase
           .from('profiles')
           .select('id, username, level, energy')
@@ -207,13 +234,12 @@ export default function App() {
       };
       fetchLeaderboard();
     }
-  }, [showLeaderboard, tg]);
+  }, [showLeaderboard, userId]);
 
   const xpForNextLevel = level * 100;
   const progress = (energy / xpForNextLevel) * 100;
 
   const logAction = (action: typeof ACTIONS[0]) => {
-    // Haptic Feedback
     if (tg?.HapticFeedback) {
       tg.HapticFeedback.impactOccurred('medium');
     }
@@ -261,25 +287,18 @@ export default function App() {
   };
 
   const Stage = getEvolutionStage(level);
-  
-  // Theme helpers
-  const accentColor = level < 3 ? 'emerald' : level < 7 ? 'cyan' : level < 11 ? 'purple' : level < 16 ? 'indigo' : 'rose';
   const accentGradient = level < 3 ? 'from-emerald-500 to-emerald-400' : level < 7 ? 'from-cyan-500 to-cyan-400' : level < 11 ? 'from-purple-500 to-purple-400' : level < 16 ? 'from-indigo-500 to-indigo-400' : 'from-rose-500 to-rose-400';
   const accentBorder = level < 3 ? 'border-emerald-500/20' : level < 7 ? 'border-cyan-500/20' : level < 11 ? 'border-purple-500/20' : level < 16 ? 'border-indigo-500/20' : 'border-rose-500/20';
-
-  const userName = tg?.initDataUnsafe?.user?.first_name || 'Герой';
 
   return (
     <div className={`min-h-screen bg-slate-950 text-slate-50 flex flex-col relative overflow-hidden font-sans select-none transition-colors duration-1000`}>
       <div className="absolute top-0 left-0 w-full h-12 z-[60] pointer-events-none" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
       
-      {/* Background Ambient */}
       <motion.div 
         animate={{ backgroundColor: level < 3 ? 'rgba(16, 185, 129, 0.15)' : level < 7 ? 'rgba(6, 182, 212, 0.15)' : level < 11 ? 'rgba(168, 85, 247, 0.15)' : level < 16 ? 'rgba(99, 102, 241, 0.15)' : 'rgba(244, 63, 94, 0.15)' }}
         className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full blur-[120px] pointer-events-none transition-colors duration-1000" 
       />
 
-      {/* Header */}
       <header className="px-6 py-8 mt-4 flex justify-between items-center relative z-10">
         <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <h1 className={`text-2xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r ${accentGradient} transition-all duration-1000`}>
@@ -298,32 +317,20 @@ export default function App() {
                 'drop-shadow(0 0 2px #f43f5e) drop-shadow(0 0 5px #f43f5e)'
               ]
             }}
-            transition={{ 
-              duration: 2, 
-              repeat: Infinity, 
-              ease: "easeInOut",
-              times: [0, 0.5, 1]
-            }}
+            transition={{ duration: 2, repeat: Infinity, ease: "easeInOut", times: [0, 0.5, 1] }}
             className={`w-10 h-10 rounded-full bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-500 hover:text-rose-400 hover:bg-rose-500/20 transition-colors`}
           >
             <Heart className="w-5 h-5 fill-rose-500/20" />
           </motion.button>
-          <button 
-            onClick={() => setShowLeaderboard(true)}
-            className={`w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors`}
-          >
+          <button onClick={() => setShowLeaderboard(true)} className={`w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors`}>
             <Users className="w-5 h-5" />
           </button>
-          <button 
-            onClick={() => setShowHistory(true)}
-            className={`w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors`}
-          >
+          <button onClick={() => setShowHistory(true)} className={`w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors`}>
             <History className="w-5 h-5" />
           </button>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="flex-1 flex flex-col items-center justify-center relative z-10 -mt-10">
         <AnimatePresence>
           {floatingTexts.map(text => (
@@ -382,7 +389,6 @@ export default function App() {
         </div>
       </main>
 
-      {/* Floating Log Button */}
       <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-20">
         <motion.button
           whileHover={{ scale: 1.1 }}
@@ -394,7 +400,6 @@ export default function App() {
         </motion.button>
       </div>
 
-      {/* Action Menu */}
       <AnimatePresence>
         {showLogMenu && (
           <>
@@ -414,7 +419,6 @@ export default function App() {
               </div>
               
               <div className="space-y-6 max-w-md mx-auto">
-                {/* Daily Quests Section */}
                 <div>
                   <h4 className="text-xs font-bold text-slate-400 mb-3 px-1 flex items-center gap-2">
                     <Zap className="w-3 h-3 text-yellow-400" /> ФОКУС ДНЯ
@@ -433,7 +437,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Other Actions */}
                 <div>
                   <h4 className="text-xs font-bold text-slate-400 mb-3 px-1">ОСТАЛЬНОЕ</h4>
                   <div className="grid grid-cols-2 gap-3">
@@ -454,7 +457,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* History Sheet */}
       <AnimatePresence>
         {showHistory && (
           <motion.div 
@@ -496,34 +498,15 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Onboarding Overlay - Redesigned to Premium Style */}
       <AnimatePresence>
         {showOnboarding && (
           <motion.div 
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="absolute inset-0 bg-slate-950 z-[100] flex flex-col items-center justify-center p-6 overflow-hidden"
           >
-            {/* Animated Background Orbs */}
-            <motion.div 
-              animate={{ 
-                x: [0, 50, -30, 0], 
-                y: [0, -40, 60, 0],
-                scale: [1, 1.2, 0.9, 1]
-              }}
-              transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-              className="absolute top-[-10%] left-[-10%] w-80 h-80 bg-emerald-500/20 rounded-full blur-[100px] pointer-events-none"
-            />
-            <motion.div 
-              animate={{ 
-                x: [0, -60, 40, 0], 
-                y: [0, 80, -50, 0],
-                scale: [1, 1.1, 1.3, 1]
-              }}
-              transition={{ duration: 18, repeat: Infinity, ease: "linear" }}
-              className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-cyan-500/20 rounded-full blur-[120px] pointer-events-none"
-            />
+            <motion.div animate={{ x: [0, 50, -30, 0], y: [0, -40, 60, 0], scale: [1, 1.2, 0.9, 1] }} transition={{ duration: 15, repeat: Infinity, ease: "linear" }} className="absolute top-[-10%] left-[-10%] w-80 h-80 bg-emerald-500/20 rounded-full blur-[100px] pointer-events-none" />
+            <motion.div animate={{ x: [0, -60, 40, 0], y: [0, 80, -50, 0], scale: [1, 1.1, 1.3, 1] }} transition={{ duration: 18, repeat: Infinity, ease: "linear" }} className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-cyan-500/20 rounded-full blur-[120px] pointer-events-none" />
 
-            {/* Main Glass Card */}
             <motion.div 
               initial={{ y: 40, opacity: 0, scale: 0.95 }}
               animate={{ y: 0, opacity: 1, scale: 1 }}
@@ -543,12 +526,9 @@ export default function App() {
                 </p>
               </div>
 
-              {/* Feature Grid */}
               <div className="grid grid-cols-1 gap-4 w-full mt-10">
                 <div className="bg-white/[0.03] border border-white/5 rounded-3xl p-4 flex items-center gap-4 group hover:bg-white/[0.06] transition-colors">
-                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-emerald-400">
-                    <Activity className="w-5 h-5" />
-                  </div>
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-emerald-400"><Activity className="w-5 h-5" /></div>
                   <div>
                     <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400">Действуй</h4>
                     <p className="text-[11px] text-slate-300">Совершай эко-дела в реальности</p>
@@ -556,9 +536,7 @@ export default function App() {
                 </div>
 
                 <div className="bg-white/[0.03] border border-white/5 rounded-3xl p-4 flex items-center gap-4 group hover:bg-white/[0.06] transition-colors">
-                  <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 flex items-center justify-center text-cyan-400">
-                    <Zap className="w-5 h-5" />
-                  </div>
+                  <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 flex items-center justify-center text-cyan-400"><Zap className="w-5 h-5" /></div>
                   <div>
                     <h4 className="text-xs font-bold uppercase tracking-wider text-cyan-400">Логируй</h4>
                     <p className="text-[11px] text-slate-300">Получай XP за каждую привычку</p>
@@ -566,9 +544,7 @@ export default function App() {
                 </div>
 
                 <div className="bg-white/[0.03] border border-white/5 rounded-3xl p-4 flex items-center gap-4 group hover:bg-white/[0.06] transition-colors">
-                  <div className="w-10 h-10 rounded-2xl bg-purple-500/20 flex items-center justify-center text-purple-400">
-                    <TreeDeciduous className="w-5 h-5" />
-                  </div>
+                  <div className="w-10 h-10 rounded-2xl bg-purple-500/20 flex items-center justify-center text-purple-400"><TreeDeciduous className="w-5 h-5" /></div>
                   <div>
                     <h4 className="text-xs font-bold uppercase tracking-wider text-purple-400">Расти</h4>
                     <p className="text-[11px] text-slate-300">Развивай Ауру до Древа Жизни</p>
@@ -590,7 +566,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Leaderboard Sheet */}
       <AnimatePresence>
         {showLeaderboard && (
           <motion.div 
@@ -607,22 +582,12 @@ export default function App() {
               <button onClick={() => setShowLeaderboard(false)} className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition-colors"><X /></button>
             </div>
 
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 mb-6 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-500">
-                <Info className="w-5 h-5" />
-              </div>
-              <div className="flex-1">
-                <p className="text-xs text-amber-200 font-bold">Нужна синхронизация</p>
-                <p className="text-[10px] text-amber-200/60">Для реальной таблицы нужен сервер. Сейчас показаны демо-данные.</p>
-              </div>
-            </div>
-
             <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
               {leaderboard.length === 0 ? (
                  <div className="h-full flex items-center justify-center text-slate-500 text-xs italic">Загрузка таблицы...</div>
               ) : (
                 leaderboard.map((player, idx) => (
-                  <div key={player.id} className={`bg-white/[0.03] border ${idx === 0 ? 'border-amber-500/30' : idx === 1 ? 'border-slate-400/30' : idx === 2 ? 'border-orange-500/30' : player.isYou ? `border-${accentColor}-500/30` : 'border-white/5'} rounded-2xl p-4 flex items-center gap-4 relative overflow-hidden`}>
+                  <div key={player.id} className={`bg-white/[0.03] border ${idx === 0 ? 'border-amber-500/30' : idx === 1 ? 'border-slate-400/30' : idx === 2 ? 'border-orange-500/30' : player.isYou ? `border-${level < 3 ? 'emerald' : level < 7 ? 'cyan' : level < 11 ? 'purple' : level < 16 ? 'indigo' : 'rose'}-500/30` : 'border-white/5'} rounded-2xl p-4 flex items-center gap-4 relative overflow-hidden`}>
                     {idx < 3 && <div className={`absolute top-0 right-0 w-8 h-8 flex items-center justify-center text-[10px] font-black ${idx === 0 ? 'bg-amber-500 text-black' : idx === 1 ? 'bg-slate-400 text-black' : 'bg-orange-500 text-black'} rounded-bl-xl`}>{idx + 1}</div>}
                     
                     <div className={`w-10 h-10 rounded-full bg-white/5 flex items-center justify-center border border-white/10`}>
@@ -631,7 +596,7 @@ export default function App() {
                     <div className="flex-1">
                       <p className="font-bold text-sm flex items-center gap-2">
                         {player.name}
-                        {player.isYou && <span className={`text-[8px] bg-${accentColor}-500/20 text-${accentColor}-400 px-1.5 py-0.5 rounded-full`}>ВЫ</span>}
+                        {player.isYou && <span className={`text-[8px] bg-slate-500/20 text-slate-400 px-1.5 py-0.5 rounded-full`}>ВЫ</span>}
                       </p>
                       <p className="text-[10px] text-slate-500">Уровень {player.level}</p>
                     </div>
@@ -644,7 +609,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Your Rank Fixed at Bottom */}
             <div className="mt-6 pt-6 border-t border-white/10">
               <div className={`bg-gradient-to-r ${accentGradient} rounded-2xl p-4 flex items-center gap-4 text-white shadow-xl`}>
                 <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center font-black">
@@ -664,7 +628,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Donation Sheet */}
       <AnimatePresence>
         {showDonation && (
           <motion.div 
@@ -673,25 +636,13 @@ export default function App() {
             exit={{ y: "100%", opacity: 0 }} 
             className="absolute inset-0 bg-slate-950 z-[120] p-6 flex flex-col items-center justify-center overflow-hidden"
           >
-            {/* Ambient background for donation */}
             <div className="absolute inset-0 bg-rose-500/10 blur-[100px] pointer-events-none" />
-            
-            <button 
-              onClick={() => setShowDonation(false)} 
-              className="absolute top-8 right-8 p-3 bg-white/5 rounded-full hover:bg-white/10 transition-colors z-10"
-            >
+            <button onClick={() => setShowDonation(false)} className="absolute top-8 right-8 p-3 bg-white/5 rounded-full hover:bg-white/10 transition-colors z-10">
               <X className="w-6 h-6" />
             </button>
 
             <motion.div
-              animate={{ 
-                scale: [1, 1.1, 1],
-                filter: [
-                  'drop-shadow(0 0 15px rgba(244,63,94,0.4))', 
-                  'drop-shadow(0 0 35px rgba(244,63,94,0.7))', 
-                  'drop-shadow(0 0 15px rgba(244,63,94,0.4))'
-                ]
-              }}
+              animate={{ scale: [1, 1.1, 1], filter: ['drop-shadow(0 0 15px rgba(244,63,94,0.4))', 'drop-shadow(0 0 35px rgba(244,63,94,0.7))', 'drop-shadow(0 0 15px rgba(244,63,94,0.4))'] }}
               transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
               className="w-28 h-28 bg-rose-500/20 rounded-[32px] flex items-center justify-center mb-10 border border-rose-500/30"
             >
@@ -701,7 +652,6 @@ export default function App() {
             <h2 className="text-4xl font-black text-center mb-4 tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white to-white/60">
               Дар Ауры
             </h2>
-            
             <p className="text-slate-400 text-center text-sm leading-relaxed max-w-[280px] mb-12">
               Твоя поддержка помогает нам развивать проект и делать мир чище. Каждое пожертвование питает наше общее будущее.
             </p>
@@ -715,12 +665,26 @@ export default function App() {
               >
                 Поддержать проект
               </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => setShowDonation(false)}
+                className="w-full py-4 bg-white/10 hover:bg-white/20 rounded-2xl font-bold transition-all text-white/70"
+              >
+                Может позже
+              </motion.button>
+
+              <button
+                onClick={resetData}
+                className="w-full py-2 text-xs text-red-400/50 hover:text-red-400 transition-colors mt-4 uppercase tracking-widest font-bold"
+              >
+                Сбросить весь прогресс (DEBUG)
+              </button>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Level Up Celebration */}
       <AnimatePresence>
         {showLevelUp && (
           <motion.div 
